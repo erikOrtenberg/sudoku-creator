@@ -29,6 +29,6 @@ executable sudoku-creator
 
     -- LANGUAGE extensions used by modules in this package.
     -- other-extensions:
-    build-depends:    base, random
+    build-depends:    base, random, mtl, text
     hs-source-dirs:   app
     default-language: Haskell2010
