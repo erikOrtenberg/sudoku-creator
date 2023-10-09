@@ -106,7 +106,9 @@ emptyBoard = Board [
 
 main :: IO ((), SudokuBoard)
 main = do
-    runStateT runSudoku exBoard
+    (_, board) <- runStateT generateRandomBoard emptyBoard
+    print board
+    return ((), board)
     --print $ putValueOnBoard exBoard (0,2) 9
     --print $ putValueOnBoard (putValueOnBoard exBoard (0,2) 9) (3,2) 8
 
@@ -169,3 +171,35 @@ isPlaceableOnBoard board@(Board regions) (row, col) numberToPut = isNotInCol && 
         isNotInCol = Numeric numberToPut `notElem` (transposedCellRows!!col)
         isNotInRegion = Numeric numberToPut `notElem` concat selectedRegion
         isEmpty = cellRows!!row!!col == Empty
+
+getPlaceableOnBoard :: SudokuBoard -> (Int, Int) -> [Int]
+getPlaceableOnBoard board pos = filter (isPlaceableOnBoard board pos) [1..9]
+
+--- Random generation ---
+generateRandomBoard :: StateT SudokuBoard IO ()
+generateRandomBoard = do
+    board <- get
+    let placeToPut = getEmptyCell board
+    if placeToPut == (-1, -1) then
+        return ()
+    else do
+        let placeable = getPlaceableOnBoard board placeToPut
+        if null placeable then do
+            put emptyBoard
+        else do
+            placeableIndex <- liftIO $ getStdRandom (randomR (0,length placeable - 1)) :: StateT SudokuBoard IO Int
+            let newBoard = putValueOnBoard board placeToPut (placeable!!placeableIndex)
+            if isNothing newBoard then 
+                put board
+            else 
+                put $ fromMaybe board newBoard
+        generateRandomBoard
+
+getEmptyCell :: SudokuBoard -> (Int, Int)
+getEmptyCell board = traverse 0 0
+    where
+        cells = boardToCells board
+        traverse x y
+            | y > 8 = (-1, -1)
+            | cells!!x!!y == Empty = (x,y)
+            | otherwise = traverse ((x + 1) `mod` 9) (y + ((x + 1) `div` 9))
