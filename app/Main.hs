@@ -119,14 +119,27 @@ emptyBoard = Board [
     [emptyRegion, emptyRegion, emptyRegion],
     [emptyRegion, emptyRegion, emptyRegion]
     ]
+exFilledBoard ::SudokuBoard
+exFilledBoard = Board [
+    [Region [[Numeric 1,Numeric 6,Numeric 4],[Numeric 9,Numeric 5,Numeric 7],[Numeric 3,Numeric 8,Numeric 2]],
+    Region [[Numeric 8,Numeric 9,Numeric 3],[Numeric 1,Numeric 2,Numeric 6],[Numeric 7,Numeric 4,Numeric 5]],
+    Region [[Numeric 2,Numeric 7,Numeric 5],[Numeric 3,Numeric 8,Numeric 4],[Numeric 6,Numeric 1,Numeric 9]]],
+    [Region [[Numeric 5,Numeric 1,Numeric 9],[Numeric 4,Numeric 7,Numeric 8],[Numeric 2,Numeric 3,Numeric 6]],
+    Region [[Numeric 4,Numeric 6,Numeric 8],[Numeric 3,Numeric 1,Numeric 2],[Numeric 5,Numeric 7,Numeric 9]],
+    Region [[Numeric 7,Numeric 3,Numeric 2],[Numeric 9,Numeric 5,Numeric 6],[Numeric 8,Numeric 4,Numeric 1]]],
+    [Region [[Numeric 7,Numeric 2,Numeric 3],[Numeric 6,Numeric 4,Numeric 1],[Numeric 8,Numeric 9,Numeric 5]],
+    Region [[Numeric 9,Numeric 5,Numeric 4],[Numeric 2,Numeric 8,Numeric 7],[Numeric 6,Numeric 3,Numeric 1]],
+    Region [[Numeric 1,Numeric 6,Numeric 8],[Numeric 5,Numeric 9,Numeric 3],[Numeric 4,Numeric 2,Numeric 7]]]
+    ]
 
-main :: IO ((), SudokuBoard)
+main :: IO ()
 main = do
-    (_, board) <- runStateT generateRandomBoard emptyBoard
+    --(_, board) <- runStateT generateRandomBoard emptyBoard
+    let board = exFilledBoard
     print board
-    newBoard <- removeFully board [lastInRow, lastInCol, lastInRegion]
+    newBoard <- removeFully board [lastInCol, lastInRow, lastInRegion, lastPossibleInRegion]
     print newBoard
-    return ((), board)
+    return ()
     --print $ putValueOnBoard exBoard (0,2) 9
     --print $ putValueOnBoard (putValueOnBoard exBoard (0,2) 9) (3,2) 8
 
@@ -232,6 +245,8 @@ getEmptyCell board = traverse 0 0
 
 --- Reduction design ---
 
+
+-- Rules
 type Removeable = SudokuBoard -> (Int, Int) -> Bool
 
 lastInRegion :: Removeable
@@ -252,16 +267,30 @@ lastInCol board (_, col) = Empty `notElem` selectedCol
         cells = transpose $ boardToCells board
         selectedCol = cells!!col
 
+lastPossibleInRegion :: Removeable
+lastPossibleInRegion board@(Board regions) pos@(row,col) = all (valueAtPos `elem`) rowsAndCols 
+    where
+        (regRow, regCol) = getRegionIndex pos
+        cells = boardToCells board
+        tCells = transpose cells
+        valueAtPos = cells!!row!!col
+        remainingRowIndecies = filter (row /=) [regRow * 3..regRow * 3 + 2]
+        remainingColIndecies = filter (col /=) [regCol * 3..regCol * 3 + 2]
+        rowsAndCols = map (cells!!) remainingRowIndecies ++ map (tCells!!) remainingColIndecies
+
+
+
+-- Apply rules function
 removeFully :: SudokuBoard -> [Removeable] -> IO SudokuBoard
 removeFully board rules = do
     let allIndecies = [(x,y) | x <- [0..8], y <- [0..8]]
     mixed <- shuffle allIndecies
     return $ removeFully' board rules mixed
 
-    
+
 removeFully' :: SudokuBoard -> [Removeable] -> [(Int, Int)] -> SudokuBoard
 removeFully' board _ [] = board
-removeFully' board rules (pos:xs) 
+removeFully' board rules (pos:xs)
     | checks = removeFully' (removeValueOnBoard board pos) rules xs
     | otherwise = removeFully' board rules xs
     where
