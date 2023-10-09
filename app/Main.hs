@@ -4,8 +4,10 @@ import System.Random
 import System.IO.Unsafe
 import Data.List
 import Control.Monad.State.Lazy
-import Data.Maybe (fromMaybe)
+import Data.Maybe (fromMaybe, isNothing)
 import Data.Text (splitOn, pack, unpack)
+import Text.Read (readMaybe)
+import GHC.Real (reduce)
 newRand :: Int
 newRand = unsafePerformIO randomIO
 randomList :: [Double]
@@ -108,26 +110,45 @@ main = do
     --print $ putValueOnBoard exBoard (0,2) 9
     --print $ putValueOnBoard (putValueOnBoard exBoard (0,2) 9) (3,2) 8
 
+getInput :: IO [Int]
+getInput = do
+    putStrLn "Please enter a number on the board. [row] [col] [num]"
+    raw <- getLine
+    let inp = map (readMaybe . unpack) $ splitOn (pack " ") (pack raw) :: [Maybe Int]
+    let containsNothing = any isNothing inp || length inp /= 3
+    if containsNothing then do
+        putStrLn "Incorrect input, try again"
+        getInput
+    else do
+        let values = map (fromMaybe (-1)) inp
+        if any (\x -> x < 1 || x > 9) values then do
+            putStrLn "Incorrect input, try again"
+            getInput
+        else
+            return [values!!0 - 1, values!!1 - 1, values!!2]
+
 runSudoku :: StateT SudokuBoard IO ()
 runSudoku = do
     board <- get
     liftIO $ print board
-    raw <- liftIO getLine
-    let inp = map (read . unpack) $ splitOn (pack " ") (pack raw) :: [Int]
+    inp <- liftIO getInput
+    liftIO $ print inp
     takeSudokuTurn (inp!!0, inp!!1) (inp!!2)
     runSudoku
 
 takeSudokuTurn :: (Int,Int) -> Int -> StateT SudokuBoard IO ()
 takeSudokuTurn placeToPut numToPlace = do
     board <- get
-    let newBoard = fromMaybe board (putValueOnBoard board placeToPut numToPlace) 
-    put newBoard
+    let newBoard = putValueOnBoard board placeToPut numToPlace
+    if isNothing newBoard then 
+        liftIO $ putStrLn "Incorrect input, try again"
+    else 
+        put $ fromMaybe board newBoard
 
--- Kommer behöva vara maybe SudokuBoard senare
 putValueOnBoard :: SudokuBoard -> (Int, Int) -> Int -> Maybe SudokuBoard
-putValueOnBoard board (row,col) numberToPut 
+putValueOnBoard board (row,col) numberToPut
     | isPlaceableOnBoard board (row,col) numberToPut = Just $ cellsToBoard newCellRows
-    | otherwise = Nothing 
+    | otherwise = Nothing
     where
         cellRows = boardToCells board
         newRow = replaceInList (cellRows!!row) (Numeric numberToPut) col
