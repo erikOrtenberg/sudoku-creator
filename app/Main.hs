@@ -8,10 +8,8 @@ import Data.Maybe (fromMaybe, isNothing)
 import Data.Text (splitOn, pack, unpack)
 import Text.Read (readMaybe)
 import GHC.Real (reduce)
-newRand :: Int
-newRand = unsafePerformIO randomIO
-randomList :: [Double]
-randomList = randoms (mkStdGen newRand)
+import Data.Array.IO
+
 data Cell = Numeric Int | Empty
     deriving Eq
 instance Show Cell where
@@ -66,6 +64,24 @@ cellsToBoard cells = Board $ map cellsInRowToRegions [first3, mid3, last3]
         mid3 = (take 3 . drop 3) cells
         last3 = (take 3 . drop 6) cells
 
+getRegionIndex :: (Int, Int) -> (Int, Int)
+getRegionIndex (row, col) = (row `div` 3, col `div` 3)
+
+shuffle :: [a] -> IO [a]
+shuffle xs = do
+        ar <- newArray n xs
+        forM [1..n] $ \i -> do
+            j <- randomRIO (i,n)
+            vi <- readArray ar i
+            vj <- readArray ar j
+            writeArray ar j vi
+            return vj
+  where
+    n = length xs
+    newArray :: Int -> [a] -> IO (IOArray Int a)
+    newArray n xs =  newListArray (1,n) xs
+
+
 exRegion :: Region
 exRegion = Region [
     [Numeric 1, Empty, Empty],
@@ -108,6 +124,8 @@ main :: IO ((), SudokuBoard)
 main = do
     (_, board) <- runStateT generateRandomBoard emptyBoard
     print board
+    newBoard <- removeFully board [lastInRow, lastInCol, lastInRegion]
+    print newBoard
     return ((), board)
     --print $ putValueOnBoard exBoard (0,2) 9
     --print $ putValueOnBoard (putValueOnBoard exBoard (0,2) 9) (3,2) 8
@@ -142,10 +160,17 @@ takeSudokuTurn :: (Int,Int) -> Int -> StateT SudokuBoard IO ()
 takeSudokuTurn placeToPut numToPlace = do
     board <- get
     let newBoard = putValueOnBoard board placeToPut numToPlace
-    if isNothing newBoard then 
+    if isNothing newBoard then
         liftIO $ putStrLn "Incorrect input, try again"
-    else 
+    else
         put $ fromMaybe board newBoard
+
+removeValueOnBoard :: SudokuBoard -> (Int, Int) -> SudokuBoard
+removeValueOnBoard board (row, col) = cellsToBoard newCellRows
+    where
+        cells = boardToCells board
+        newRow = replaceInList (cells!!row) Empty col
+        newCellRows = replaceInList cells newRow row
 
 putValueOnBoard :: SudokuBoard -> (Int, Int) -> Int -> Maybe SudokuBoard
 putValueOnBoard board (row,col) numberToPut
@@ -189,9 +214,9 @@ generateRandomBoard = do
         else do
             placeableIndex <- liftIO $ getStdRandom (randomR (0,length placeable - 1)) :: StateT SudokuBoard IO Int
             let newBoard = putValueOnBoard board placeToPut (placeable!!placeableIndex)
-            if isNothing newBoard then 
+            if isNothing newBoard then
                 put board
-            else 
+            else
                 put $ fromMaybe board newBoard
         generateRandomBoard
 
@@ -203,3 +228,41 @@ getEmptyCell board = traverse 0 0
             | y > 8 = (-1, -1)
             | cells!!x!!y == Empty = (x,y)
             | otherwise = traverse ((x + 1) `mod` 9) (y + ((x + 1) `div` 9))
+
+
+--- Reduction design ---
+
+type Removeable = SudokuBoard -> (Int, Int) -> Bool
+
+lastInRegion :: Removeable
+lastInRegion (Board regions) pos = Empty `notElem` concat cells
+    where
+        (regRow, regCol) = getRegionIndex pos
+        (Region cells) = regions!!regRow!!regCol
+
+lastInRow :: Removeable
+lastInRow board (row, _) = Empty `notElem` selectedRow
+    where
+        cells = boardToCells board
+        selectedRow = cells!!row
+
+lastInCol :: Removeable
+lastInCol board (_, col) = Empty `notElem` selectedCol
+    where
+        cells = transpose $ boardToCells board
+        selectedCol = cells!!col
+
+removeFully :: SudokuBoard -> [Removeable] -> IO SudokuBoard
+removeFully board rules = do
+    let allIndecies = [(x,y) | x <- [0..8], y <- [0..8]]
+    mixed <- shuffle allIndecies
+    return $ removeFully' board rules mixed
+
+    
+removeFully' :: SudokuBoard -> [Removeable] -> [(Int, Int)] -> SudokuBoard
+removeFully' board _ [] = board
+removeFully' board rules (pos:xs) 
+    | checks = removeFully' (removeValueOnBoard board pos) rules xs
+    | otherwise = removeFully' board rules xs
+    where
+        checks = any (\rule -> rule board pos) rules
