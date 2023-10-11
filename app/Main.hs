@@ -137,8 +137,9 @@ main = do
     --(_, board) <- runStateT generateRandomBoard emptyBoard
     let board = exFilledBoard
     print board
-    newBoard <- removeFully board [lastInCol, lastInRow, lastInRegion, lastPossibleInRegion]
-    print newBoard
+    newBoard <- removeFully board [lastPossibleInRow, lastPossibleInCol, lastPossibleInRegion]
+    --print newBoard
+    (_, wowie) <- runStateT runSudoku newBoard
     return ()
     --print $ putValueOnBoard exBoard (0,2) 9
     --print $ putValueOnBoard (putValueOnBoard exBoard (0,2) 9) (3,2) 8
@@ -160,12 +161,13 @@ getInput = do
         else
             return [values!!0 - 1, values!!1 - 1, values!!2]
 
+--- Sudoku runner 
+
 runSudoku :: StateT SudokuBoard IO ()
 runSudoku = do
     board <- get
     liftIO $ print board
     inp <- liftIO getInput
-    liftIO $ print inp
     takeSudokuTurn (inp!!0, inp!!1) (inp!!2)
     runSudoku
 
@@ -277,6 +279,28 @@ lastPossibleInRegion board@(Board regions) pos@(row,col) = all (valueAtPos `elem
         remainingRowIndecies = filter (row /=) [regRow * 3..regRow * 3 + 2]
         remainingColIndecies = filter (col /=) [regCol * 3..regCol * 3 + 2]
         rowsAndCols = map (cells!!) remainingRowIndecies ++ map (tCells!!) remainingColIndecies
+
+lastPossibleInRow :: Removeable
+lastPossibleInRow board pos@(row,col) = all myFunc [0..8]
+    where   
+        (Board regions) = removeValueOnBoard board pos
+        rows = boardToCells board
+        cols = transpose rows
+        --thisRow = rows!!row
+        numberAtPos = rows!!row!!col
+        myFunc :: Int -> Bool
+        myFunc column = rows!!row!!column /= Empty || numberAtPos `elem` (cols!!column ++ regionCells) 
+            where 
+                (regionRow, regionCol) = getRegionIndex (row, column)
+                (Region currRegion) = regions!!regionRow!!regionCol
+                regionCells = concat currRegion
+
+lastPossibleInCol :: Removeable
+lastPossibleInCol board (row,col) = lastPossibleInRow tBoard (col, row)
+    where
+        cells = boardToCells board
+        tcells = transpose cells
+        tBoard = cellsToBoard tcells
 
 
 
